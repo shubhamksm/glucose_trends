@@ -22,29 +22,41 @@ app.add_middleware(
 DATABASE_URL = os.getenv('DATABASE_URL')
 engine = create_engine(DATABASE_URL)
 
+column_mapping = {
+    'Device Timestamp': 'timestamp',
+    'Record Type': 'record_type',
+    'Historic Glucose mmol/L': 'historic_glucose',
+    'Scan Glucose mmol/L': 'scan_glucose',
+    'Rapid-Acting Insulin (units)': 'rapid_acting_insulin',
+    'Long-Acting Insulin Value (units)': 'long_acting_insulin'
+}
+
 @app.post("/upload-csv/")
 async def upload_csv(file: UploadFile = File(...)):
     df = pd.read_csv(file.file, skiprows=[0], header=0)
-    df = df[['Device Timestamp', 'Record Type', 'Historic Glucose mmol/L', 'Scan Glucose mmol/L', 
-             'Rapid-Acting Insulin (units)', 'Long-Acting Insulin Value (units)']]
     
-    df['Device Timestamp'] = pd.to_datetime(df['Device Timestamp'])
+    # Select and rename columns
+    df = df[column_mapping.keys()].rename(columns=column_mapping)
+    
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
     df.to_sql('glucose_data', engine, if_exists='replace', index=False)
     
     return {"message": "CSV uploaded and processed successfully"}
 
 @app.get("/glucose-trends/")
 async def glucose_trends(insulin_type: str, min_dose: float, max_dose: float):
+    insulin_column = 'rapid_acting_insulin' if insulin_type == 'rapid' else 'long_acting_insulin'
+    
     query = f"""
-    SELECT "Device Timestamp", "Historic Glucose mmol/L"
+    SELECT timestamp, historic_glucose
     FROM glucose_data
-    WHERE "{insulin_type} (units)" BETWEEN {min_dose} AND {max_dose}
-    ORDER BY "Device Timestamp"
+    WHERE {insulin_column} BETWEEN {min_dose} AND {max_dose}
+    ORDER BY timestamp
     """
     df = pd.read_sql(query, engine)
     
     # Group by hour and calculate average glucose
-    df['hour'] = df['Device Timestamp'].dt.hour
-    hourly_avg = df.groupby('hour')['Historic Glucose mmol/L'].mean().reset_index()
+    df['hour'] = df['timestamp'].dt.hour
+    hourly_avg = df.groupby('hour')['historic_glucose'].mean().reset_index()
     
     return hourly_avg.to_dict(orient='records')
