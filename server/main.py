@@ -22,6 +22,7 @@ app.add_middleware(
 DATABASE_URL = os.getenv('DATABASE_URL')
 engine = create_engine(DATABASE_URL)
 
+# Column name mapping
 column_mapping = {
     'Device Timestamp': 'timestamp',
     'Record Type': 'record_type',
@@ -38,7 +39,14 @@ async def upload_csv(file: UploadFile = File(...)):
     # Select and rename columns
     df = df[column_mapping.keys()].rename(columns=column_mapping)
     
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    # Parse the timestamp with the correct format
+    df['timestamp'] = pd.to_datetime(df['timestamp'], format='%d-%m-%Y %H:%M')
+    
+    # Convert numeric columns to appropriate types
+    numeric_columns = ['historic_glucose', 'scan_glucose', 'rapid_acting_insulin', 'long_acting_insulin']
+    for col in numeric_columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
     df.to_sql('glucose_data', engine, if_exists='replace', index=False)
     
     return {"message": "CSV uploaded and processed successfully"}
@@ -60,3 +68,18 @@ async def glucose_trends(insulin_type: str, min_dose: float, max_dose: float):
     hourly_avg = df.groupby('hour')['historic_glucose'].mean().reset_index()
     
     return hourly_avg.to_dict(orient='records')
+
+# Add this function to test the database connection
+@app.get("/test-db-connection")
+async def test_db_connection():
+    try:
+        with engine.connect() as connection:
+            result = connection.execute("SELECT 1")
+            return {"message": "Database connection successful"}
+    except Exception as e:
+        return {"error": f"Database connection failed: {str(e)}"}
+
+# Add this function to check the DATABASE_URL
+@app.get("/check-db-url")
+async def check_db_url():
+    return {"DATABASE_URL": DATABASE_URL}
