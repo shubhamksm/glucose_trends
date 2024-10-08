@@ -5,6 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from sqlalchemy import create_engine
 from datetime import datetime, timedelta
+import logging
+
+# Configure the logger
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+logger = logging.getLogger(__name__)
+
 
 load_dotenv()
 app = FastAPI()
@@ -12,7 +19,7 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,17 +62,57 @@ async def upload_csv(file: UploadFile = File(...)):
 async def glucose_trends(insulin_type: str, min_dose: float, max_dose: float):
     insulin_column = 'rapid_acting_insulin' if insulin_type == 'rapid' else 'long_acting_insulin'
     
+    # Calculate the start and end timestamps for the 72-hour window
+    query = f"""
+    SELECT timestamp
+    FROM glucose_data
+    WHERE {insulin_column} BETWEEN {min_dose} AND {max_dose}
+    LIMIT 1  -- Assuming you want the first instance of insulin taken
+    """
+    
+    # Fetch the timestamp of insulin taken
+    insulin_timestamp = pd.read_sql(query, engine).iloc[0]['timestamp']
+    
+    # Calculate the 72-hour range
+    start_time = insulin_timestamp - pd.Timedelta(hours=24)  # 24 hours before
+    end_time = insulin_timestamp + pd.Timedelta(hours=24)    # 48 hours after
+
+    # Log the calculated time range
+    logger.debug(f"Fetching data from {start_time} to {end_time}")
+
+    # Updated query to fetch glucose data within the 72-hour range
     query = f"""
     SELECT timestamp, historic_glucose
     FROM glucose_data
-    WHERE {insulin_column} BETWEEN {min_dose} AND {max_dose}
+    WHERE timestamp BETWEEN '{start_time}' AND '{end_time}'
     ORDER BY timestamp
     """
     df = pd.read_sql(query, engine)
     
+    # Log the fetched data
+    logger.debug(f"Data fetched: {df.head()}")  # Logs the first few rows of the DataFrame
+
+    # Ensure timestamp is in datetime format
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+
     # Group by hour and calculate average glucose
-    df['hour'] = df['timestamp'].dt.hour
+    df['hour'] = df['timestamp'].dt.floor('H')  # Group by hour
     hourly_avg = df.groupby('hour')['historic_glucose'].mean().reset_index()
+
+    # Add a flag for the hour when insulin was taken
+    hourly_avg['insulin_taken'] = hourly_avg['hour'].apply(
+        lambda hour: hour == insulin_timestamp.floor('H')
+    )
+
+    # Format the hour to a more readable string
+    hourly_avg['hour'] = hourly_avg['hour'].dt.strftime("%I:%M %p, %d %b - %Y")
+
+    # Log the hourly averages before returning
+    logger.debug(f"Hourly averages: {hourly_avg}")
+
+    # Check for NaN values
+    if hourly_avg.isnull().values.any():
+        logger.warning("NaN values detected in the result")
     
     return hourly_avg.to_dict(orient='records')
 

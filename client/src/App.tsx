@@ -12,11 +12,12 @@ import {
   ChartLegend,
   ChartLegendContent,
 } from "@/components/ui/chart";
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Dot, Line, LineChart, XAxis, YAxis } from "recharts";
 
 interface GlucoseData {
   hour: number;
   historic_glucose: number;
+  insulin_taken: boolean;
 }
 
 const chartConfig = {
@@ -97,7 +98,21 @@ function App() {
                 <ChartLegend content={<ChartLegendContent />} />
                 <Line
                   dataKey="historic_glucose"
-                  stroke="var(--color-historic-glucose)"
+                  stroke="var(--color-historic_glucose)"
+                  dot={({ payload, ...props }) => {
+                    return (
+                      payload.insulin_taken && (
+                        <Dot
+                          key={payload.historic_glucose}
+                          r={5}
+                          cx={props.cx}
+                          cy={props.cy}
+                          fill={"var(--color-historic_glucose)"}
+                          stroke={"var(--color-historic_glucose)"}
+                        />
+                      )
+                    );
+                  }}
                 />
               </LineChart>
             </ChartContainer>
