@@ -12,12 +12,19 @@ import {
   ChartLegend,
   ChartLegendContent,
 } from "@/components/ui/chart";
+import { Slider } from "@/components/ui/slider";
 import { CartesianGrid, Dot, Line, LineChart, XAxis, YAxis } from "recharts";
 
-interface GlucoseData {
-  hour: number;
+interface HourlyGlucoseData {
+  hour: string;
   historic_glucose: number;
   insulin_taken: boolean;
+}
+
+interface GlucoseData {
+  units_taken: number;
+  timestamp: string;
+  glucose_trends: HourlyGlucoseData[];
 }
 
 const chartConfig = {
@@ -33,6 +40,7 @@ const chartConfig = {
 
 function App() {
   const [glucoseData, setGlucoseData] = useState<GlucoseData[] | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -90,7 +98,7 @@ function App() {
               config={chartConfig}
               className="min-h-[200px] w-full"
             >
-              <LineChart data={glucoseData}>
+              <LineChart data={glucoseData[currentPage].glucose_trends}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="hour" />
                 <YAxis />
@@ -116,6 +124,12 @@ function App() {
                 />
               </LineChart>
             </ChartContainer>
+            <Slider
+              defaultValue={[currentPage]}
+              max={glucoseData.length - 1}
+              step={1}
+              onValueChange={([value]) => setCurrentPage(value)}
+            />
           </CardContent>
         </Card>
       )}
